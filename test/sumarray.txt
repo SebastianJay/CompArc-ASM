@@ -1,0 +1,21 @@
+lil r0, h30
+lil r1, 0
+ld r2, r0, 0
+lil r4, 1
+lil r5, 0
+startloop:
+mov r3, r2
+sub r3, r1
+bz endloop
+mov r6, r0
+add r6, r1
+ld r7, r6, 1
+add r5, r7
+add r1, r4
+br startloop
+endloop:
+lil r8, h40
+st r5, r8, 0
+spin:
+nop
+br spin

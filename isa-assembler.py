@@ -3,7 +3,7 @@ import argparse
 import os.path
 
 #modify this value to be the memory location where the program begins
-startaddress = 10
+startaddress = 8
 outhex = False
 
 regop = {
@@ -198,16 +198,50 @@ def convert(lines):
             ind += 1
     return binlines
 
+def parsememline(line):
+    if len(line) == 4:
+        return dectobin(int(line, 16), 16)
+    elif len(line) == 16:
+        return line
+    else:
+        print 'ERROR: bad line length in memory file (must be hex or binary)'
+
+def readmem(lines):
+    lineblocks = []
+    currblock = []
+    startaddr = 0
+    for line in lines:
+        if line[-1] == ':':
+            if currblock:
+                lineblocks.append((startaddr, currblock))
+                currblock = []
+            startaddr = int(parsememline(line[:-1]), 2)
+        else:
+            memline = parsememline(line)
+            currblock.append(memline)
+    if currblock:
+        lineblocks.append((startaddr, currblock))
+    return lineblocks
+
 def main():
     parser = argparse.ArgumentParser(description='ECE 4435 assembler')
     parser.add_argument('asmfile', help='path to input assembly file')
     parser.add_argument('--hex', action='store_true', help='print output as hex strings')
-    parser.add_argument('--start', default=10, help='set decimal address of first instruction of program (10 by default)')
+    parser.add_argument('--start', default=8, help='set decimal address of first instruction of program (8 by default)')
+    parser.add_argument('--mem', default='', help='path to auxiliary memory file')
     args = vars(parser.parse_args(sys.argv[1:]))
 
     startaddress = args['start']
     outhex = args['hex']
     inpath = args['asmfile']
+    mempath = args['mem']
+
+    lineblocks = []
+    if mempath:
+        with open(mempath, 'U') as fin:
+            lines = fin.read().split('\n')
+        lines = [line for line in lines if len(line) > 0]
+        lineblocks = readmem(lines)
 
     with open(inpath, 'U') as fin:
         lines = fin.read().split('\n')
@@ -218,10 +252,23 @@ def main():
     for i, line in enumerate(lines):
         if '#' in line:
             lines[i] = line[0:line.index('#')]
+
     binlines = convert(lines)
+    maxind = startaddress + len(binlines) - 1
+    for block in lineblocks:
+        maxind = max(maxind, block[0] + len(block[1]) - 1)
+    proglines = ['0000000000000000'] * (maxind + 1)
+    for block in lineblocks:
+        startaddr = block[0]
+        for i, line in enumerate(block[1]):
+            proglines[startaddr+i] = line
+    for i, line in enumerate(binlines):
+        proglines[startaddress+i] = line
+    proglines[0] = dectobin(startaddress, 16)
+
     if outhex:
-        binlines = [hex(int(line, 2))[2:] for line in binlines]
-    outbuf = '\n'.join(binlines) + '\n'
+        proglines = [hex(int(line, 2))[2:] for line in proglines]
+    outbuf = '\n'.join(proglines) + '\n'
 
     pathparts = os.path.split(inpath)
     with open(os.path.join(pathparts[0], 'bin.' + pathparts[1]), 'w') as fout:
