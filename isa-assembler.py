@@ -2,10 +2,6 @@ import sys
 import argparse
 import os.path
 
-#modify this value to be the memory location where the program begins
-startaddress = 8
-outhex = False
-
 regop = {
     'r0':   '0000',
     'r1':   '0001',
@@ -59,6 +55,8 @@ auxop = {
     'jal':  '1'
 }
 
+#takes a signed int value and returns a binary string
+#the string is as long as is specified in bits
 def dectobin(num, bits):
     neg = False
     if num < 0:
@@ -73,6 +71,8 @@ def dectobin(num, bits):
             res = '0' + res
     return res
 
+#takes a string representing a decimal or hex number
+# returns parsed int or errs and exits if format not met
 def parseint(string):
     base = 10
     if string[0] == 'h':
@@ -84,9 +84,11 @@ def parseint(string):
         print 'ERROR: malformed integer constant (bad constant='+string+')'
         sys.exit()
 
+#returns whether a char is in [0-9]
 def isnum(char):
     return ord(char[0]) >= 48 and ord(char[0]) <= 57
 
+#takes a list of register labels and errs and exits if a label is not valid
 def regcheck(reglst):
     for reg in reglst:
         if reg not in regop:
@@ -94,9 +96,11 @@ def regcheck(reglst):
             sys.exit()
     return reglst
 
-def convert(lines):
+#takes a list of strings raw contents of assembly file and int start location of program
+#returns a list of binary strings corresponding to program
+def convert(lines, startaddr):
     lbmap = {}
-    ind = startaddress
+    ind = startaddr
     #do first pass to look for labels
     for line in lines:
         #check if line is a label
@@ -119,7 +123,7 @@ def convert(lines):
         else:
             ind += 1
 
-    ind = startaddress
+    ind = startaddr
     binlines = []
     #do second pass to parse instructions
     for line in lines:
@@ -198,14 +202,17 @@ def convert(lines):
             ind += 1
     return binlines
 
+#takes a hex or binary string and returns a binary string
 def parsememline(line):
     if len(line) == 4:
         return dectobin(int(line, 16), 16)
     elif len(line) == 16:
         return line
     else:
-        print 'ERROR: bad line length in memory file (must be hex or binary)'
+        print 'ERROR: bad line length in memory file (must be hex or binary, zero padded)'
 
+#takes in list of string raw contents of memory file and returns
+# list of (int start location of block, list of binary string memory contents)
 def readmem(lines):
     lineblocks = []
     currblock = []
@@ -224,6 +231,7 @@ def readmem(lines):
     return lineblocks
 
 def main():
+    ##parse command line arguments
     parser = argparse.ArgumentParser(description='ECE 4435 assembler')
     parser.add_argument('asmfile', help='path to input assembly file')
     parser.add_argument('--hex', action='store_true', help='print output as hex strings')
@@ -231,45 +239,62 @@ def main():
     parser.add_argument('--mem', default='', help='path to auxiliary memory file')
     args = vars(parser.parse_args(sys.argv[1:]))
 
-    startaddress = args['start']
+    startaddr = args['start']
     outhex = args['hex']
-    inpath = args['asmfile']
     mempath = args['mem']
+    inpath = args['asmfile']
 
+    #read memory blocks if a mem file is specified
     lineblocks = []
     if mempath:
         with open(mempath, 'U') as fin:
             lines = fin.read().split('\n')
-        lines = [line for line in lines if len(line) > 0]
+        #strip out comments and leading/trailing whitespace
+        lines = [line.strip() for line in lines]
+        lines = [line for line in lines if len(line) > 0 and line[0] != '#']
+        for i, line in enumerate(lines):
+            if '#' in line:
+                lines[i] = line[0:line.index('#')]
+        lines = [line.strip() for line in lines]
+        #convert lines into (int start location, list of binary string) mem blocks
         lineblocks = readmem(lines)
 
+    #read the main program file
     with open(inpath, 'U') as fin:
         lines = fin.read().split('\n')
-
     #remove empty lines, single line comments and convert to lowercase
     lines = [line.lower() for line in lines if len(line) > 0 and line[0] != '#']
     #remove comments that are part of code line
     for i, line in enumerate(lines):
         if '#' in line:
             lines[i] = line[0:line.index('#')]
+    #convert assembly into list of binary strings
+    binlines = convert(lines, startaddr)
 
-    binlines = convert(lines)
-    maxind = startaddress + len(binlines) - 1
+    #identify the max address of program or data
+    maxind = startaddr + len(binlines) - 1
     for block in lineblocks:
         maxind = max(maxind, block[0] + len(block[1]) - 1)
+    #create a large enough space for the merged program/data, all zero initialized
     proglines = ['0000000000000000'] * (maxind + 1)
+    #fill in lines from memory
     for block in lineblocks:
-        startaddr = block[0]
+        mstartaddr = block[0]
         for i, line in enumerate(block[1]):
-            proglines[startaddr+i] = line
+            proglines[mstartaddr+i] = line
+    #fill in lines from the program
     for i, line in enumerate(binlines):
-        proglines[startaddress+i] = line
-    proglines[0] = dectobin(startaddress, 16)
+        proglines[startaddr+i] = line
+    #designate memory at address 0 to be where the start of the program is
+    proglines[0] = dectobin(startaddr, 16)
 
+    #convert to hex if option specified
     if outhex:
         proglines = [hex(int(line, 2))[2:] for line in proglines]
+    #join binary strings into one buffer
     outbuf = '\n'.join(proglines) + '\n'
 
+    #print out the whole program as new file
     pathparts = os.path.split(inpath)
     with open(os.path.join(pathparts[0], 'bin.' + pathparts[1]), 'w') as fout:
         fout.write(outbuf)

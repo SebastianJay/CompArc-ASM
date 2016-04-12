@@ -48,3 +48,22 @@ lih r5, h7F
 add r0, r1
 br main     #goes back to top
 ```
+
+Memory
+---
+You can specify arbitrary data in a separate file and include it in the program by using the `--mem [path to memory file]` command line arg. This memory will be inserted into the generated machine code at the specified start addresses within the file itself. Data words are specified in either hex or binary. A word that is followed by a colon indicates a memory address; otherwise it is interpreted as data to be placed at sequential offsets from that location. An example file is shown below.
+```
+0050:   #the following memory will start at address 0x0050
+0001    # address 0x0050 has 0x0001
+00FF    # address 0x0051 has 0x00FF
+0002    # address 0x0052 has 0x0002
+0005    # and so on..
+0004
+FFFF
+0000000011111111:   #another block of memory will start at 0x00FF
+1010101010101010    # address 0x00FF has 0xAAAA
+1111000011110000    # address 0x0100 has 0xF0F0
+ABCD                # we can use hex and binary interchangeably
+FC02
+0000000010110100
+```
